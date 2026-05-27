@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from agent import run_agent
+from typing import Optional, List
+from agent import run_agent, get_all_jobs
 
 app = FastAPI()
 
-# React 연결을 위한 CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -16,6 +16,12 @@ app.add_middleware(
 
 class QueryRequest(BaseModel):
     question: str
+
+class FilterRequest(BaseModel):
+    field: Optional[str] = None
+    level: Optional[str] = None
+    tags: Optional[List[str]] = None
+    keyword: Optional[str] = None
 
 @app.get("/")
 def root():
@@ -32,11 +38,34 @@ def analyze(request: QueryRequest):
 
 @app.get("/jobs")
 def get_jobs():
-    jobs = [
-        {"id": "1", "company": "카카오", "title": "AI 엔지니어", "tags": ["Python", "LangChain", "RAG"], "level": "경력 2년"},
-        {"id": "2", "company": "네이버", "title": "AI 서비스 기획자", "tags": ["기획", "데이터 분석", "SQL"], "level": "신입 가능"},
-        {"id": "3", "company": "토스", "title": "머신러닝 엔지니어", "tags": ["PyTorch", "TensorFlow", "MLOps"], "level": "경력 3년"},
-        {"id": "4", "company": "라인", "title": "AI 프로덕트 매니저", "tags": ["PM", "AI 서비스", "영어"], "level": "경력 2년"},
-        {"id": "5", "company": "당근마켓", "title": "AI 엔지니어", "tags": ["Python", "MLOps", "RAG"], "level": "신입 가능"},
-    ]
-    return {"jobs": jobs}
+    return {"jobs": get_all_jobs()}
+
+@app.post("/jobs/filter")
+def filter_jobs(request: FilterRequest):
+    jobs = get_all_jobs()
+
+    if request.field and request.field != "전체":
+        jobs = [j for j in jobs if j["field"] == request.field]
+
+    if request.level and request.level != "전체":
+        if request.level == "신입":
+            jobs = [j for j in jobs if "신입" in j["level"]]
+        elif request.level == "경력":
+            jobs = [j for j in jobs if "경력" in j["level"]]
+
+    if request.tags:
+        jobs = [j for j in jobs if any(tag in j["tags"] for tag in request.tags)]
+
+    if request.keyword:
+        kw = request.keyword.lower()
+        jobs = [j for j in jobs if
+                kw in j["company"].lower() or
+                kw in j["title"].lower() or
+                kw in j["text"].lower() or
+                any(kw in tag.lower() for tag in j["tags"])]
+
+    return {"jobs": jobs, "total": len(jobs)}
+
+@app.get("/fields")
+def get_fields():
+    return {"fields": ["전체", "NLP/LLM", "컴퓨터비전", "ML/추천시스템", "MLOps", "데이터 분석", "AI 기획/PM", "강화학습"]}
